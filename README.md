@@ -16,7 +16,7 @@
 
 ## 界面预览
 
-![BOCE 检测工具界面](docs/images/app-screenshot.png)
+![BOCE 检测工具界面](https://github.com/user-attachments/assets/7be5ad3c-58b2-4cbd-9ff4-77ae023302a7)
 
 ## 接口说明
 
