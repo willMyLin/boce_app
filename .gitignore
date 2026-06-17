@@ -1,4 +1,6 @@
 node_modules
 frontend/dist
+build/bin/
+build/release/
 .gocache/
 .DS_Store
