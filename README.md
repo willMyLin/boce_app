@@ -120,7 +120,7 @@ build/bin
 
 已压缩好的发布包可在 GitHub Release 下载：
 
-[https://github.com/willMyLin/boce_app/releases/latest](https://github.com/willMyLin/boce_app/releases/latest)
+[https://github.com/willMyLin/boce-domain-checker/releases/latest](https://github.com/willMyLin/boce-domain-checker/releases/latest)
 
 发布包对应关系：
 
