@@ -116,19 +116,17 @@ wails build -platform darwin/amd64,darwin/arm64,windows/amd64
 build/bin
 ```
 
-已压缩好的发布包位于：
+已压缩好的发布包可在 GitHub Release 下载：
 
-```text
-build/release
-```
+[https://github.com/willMyLin/boce_app/releases/latest](https://github.com/willMyLin/boce_app/releases/latest)
 
 发布包对应关系：
 
-```text
-boce_tool_app_windows_amd64.zip  Windows 64 位
-boce_tool_app_darwin_amd64.zip   Intel Mac
-boce_tool_app_darwin_arm64.zip   Apple Silicon Mac
-```
+| 平台 | 下载 |
+| --- | --- |
+| Windows 64 位 | [boce_tool_app_windows_amd64.zip](https://github.com/willMyLin/boce_app/releases/latest/download/boce_tool_app_windows_amd64.zip) |
+| Intel Mac | [boce_tool_app_darwin_amd64.zip](https://github.com/willMyLin/boce_app/releases/latest/download/boce_tool_app_darwin_amd64.zip) |
+| Apple Silicon Mac | [boce_tool_app_darwin_arm64.zip](https://github.com/willMyLin/boce_app/releases/latest/download/boce_tool_app_darwin_arm64.zip) |
 
 Mac 下载 zip 解压后，如提示没有执行权限，可执行：
 
