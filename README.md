@@ -137,10 +137,10 @@ chmod +x boce_tool_app_darwin_arm64
 ./boce_tool_app_darwin_arm64
 ```
 
-Mac 压缩包内已包含 `fix_mac_quarantine.sh`。如果提示“文件已损坏”或“无法打开”，通常是下载文件被隔离标记导致，可在解压后的文件目录执行：
+如果 Mac 提示“文件已损坏”或“无法打开”，通常是下载文件被隔离标记导致，可在解压后的文件目录执行：
 
 ```bash
-sh fix_mac_quarantine.sh    // 或直接运行 xattr -dr com.apple.quarantine 文件名
+xattr -dr com.apple.quarantine boce_tool_app_darwin_arm64
 ./boce_tool_app_darwin_arm64
 ```
 
