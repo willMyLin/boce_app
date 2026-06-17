@@ -125,8 +125,8 @@ build/bin
 | 平台 | 下载 |
 | --- | --- |
 | Windows 64 位 | [boce_tool_app_windows_amd64.zip](https://github.com/user-attachments/files/29027774/boce_tool_app_darwin_amd64.zip) |
-| Intel Mac | [boce_tool_app_darwin_amd64.zip](https://github.com/user-attachments/files/29027778/boce_tool_app_darwin_arm64.zip) |
-| Apple Silicon Mac | [boce_tool_app_darwin_arm64.zip](https://github.com/user-attachments/files/29027781/boce_tool_app_windows_amd64.zip) |
+| Intel Mac  Apple Silicon Mac | [boce_tool_app_darwin_amd64.zip](https://github.com/user-attachments/files/29027778/boce_tool_app_darwin_arm64.zip) |
+| Intel Mac  | [boce_tool_app_darwin_arm64.zip](https://github.com/user-attachments/files/29027781/boce_tool_app_windows_amd64.zip) |
 
 Mac 下载 zip 解压后，如提示没有执行权限，可执行：
 
