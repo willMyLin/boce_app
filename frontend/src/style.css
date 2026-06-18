@@ -191,17 +191,84 @@ button {
   min-width: 85px;
 }
 
+.start-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
 .export-button {
   min-width: 86px;
   padding-inline: 10px;
 }
 
 .table-frame {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   border: 1px solid #8f9daa;
   background: #fff;
+}
+
+.table-loading {
+  border-color: #0078d7;
+}
+
+.loading-strip {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  box-sizing: border-box;
+  border-bottom: 1px solid #b8d6f0;
+  background: #eef7ff;
+  color: #005a9e;
+  padding: 0 10px;
+}
+
+.loading-empty {
+  position: absolute;
+  inset: 25px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #555;
+  pointer-events: none;
+}
+
+.loading-spinner,
+.button-spinner {
+  width: 13px;
+  height: 13px;
+  box-sizing: border-box;
+  border: 2px solid #9cc8ee;
+  border-top-color: #0078d7;
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+.button-spinner {
+  width: 12px;
+  height: 12px;
+  border-color: #9d9d9d;
+  border-top-color: #4b4b4b;
+}
+
+.loading-spinner.large {
+  width: 18px;
+  height: 18px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .result-table {

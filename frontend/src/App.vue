@@ -1,10 +1,11 @@
 <script setup>
-import {computed, reactive, ref} from 'vue'
+import {computed, onMounted, onUnmounted, reactive, ref} from 'vue'
 import {
   ExportPollutionExcel,
   ImportTXT,
   StartDetection,
 } from './api/boce'
+import {EventsOn} from '../wailsjs/runtime/runtime'
 
 const rows = ref([])
 const selectedId = ref(null)
@@ -13,6 +14,7 @@ const paused = ref(false)
 const notice = ref('')
 const exportPath = ref('')
 const progress = ref(0)
+const streamTotal = ref(0)
 const importedTargets = ref([])
 const targetText = ref('')
 const targetError = ref('')
@@ -62,6 +64,15 @@ const statusOptions = computed(() => {
 const displayRows = computed(() => rows.value.filter(row => matchStatusFilter(row.status)))
 const displaySummary = computed(() => summarizeRows(displayRows.value))
 const isICPResult = computed(() => form.detectionType === 'icp')
+const loadingText = computed(() => {
+  if (!running.value) {
+    return ''
+  }
+  if (streamTotal.value > 0) {
+    return `检测中 ${rows.value.length}/${streamTotal.value}`
+  }
+  return '检测中...'
+})
 
 function isAbnormalStatus(status) {
   return ['污染', '拦截', '未备案', '黑名单', '被墙', '疑似被墙', '域名格式错误', '失败', '未知'].includes(status)
@@ -218,6 +229,56 @@ function applySummary(nextSummary) {
   Object.assign(summary, nextSummary)
 }
 
+function upsertRow(row) {
+  if (!row || !row.id) {
+    return
+  }
+
+  const existingIndex = rows.value.findIndex(item => item.id === row.id)
+  if (existingIndex >= 0) {
+    rows.value.splice(existingIndex, 1, row)
+  } else {
+    rows.value.push(row)
+    rows.value.sort((left, right) => left.id - right.id)
+  }
+  if (!selectedId.value) {
+    selectedId.value = row.id
+  }
+  if (streamTotal.value > 0) {
+    progress.value = Math.min(100, Math.round((rows.value.length / streamTotal.value) * 100))
+  }
+  keepValidStatusFilter()
+}
+
+let unlistenDetectStart = null
+let unlistenDetectRow = null
+
+onMounted(() => {
+  if (!window.runtime?.EventsOnMultiple) {
+    return
+  }
+
+  unlistenDetectStart = EventsOn('detect:start', payload => {
+    streamTotal.value = Number(payload?.total || 0)
+    progress.value = 0
+    rows.value = []
+    selectedId.value = null
+    keepValidStatusFilter()
+  })
+  unlistenDetectRow = EventsOn('detect:row', row => {
+    upsertRow(row)
+  })
+})
+
+onUnmounted(() => {
+  if (unlistenDetectStart) {
+    unlistenDetectStart()
+  }
+  if (unlistenDetectRow) {
+    unlistenDetectRow()
+  }
+})
+
 async function importTxt() {
   const result = await ImportTXT()
   if (!result.canceled && result.targets?.length) {
@@ -239,6 +300,7 @@ async function startDetection() {
   paused.value = false
   notice.value = '正在检测...'
   progress.value = 0
+  streamTotal.value = 0
   rows.value = []
   selectedId.value = null
   const targets = validation.targets
@@ -258,7 +320,7 @@ async function startDetection() {
     targets,
   })
 
-  rows.value = result.rows || []
+  rows.value = result.rows || rows.value
   keepValidStatusFilter()
   selectedId.value = rows.value[12]?.id || rows.value[0]?.id || null
   applySummary(result.summary)
@@ -337,7 +399,10 @@ async function exportExcel() {
         </option>
       </select>
 
-      <button class="win-button action-button" type="button" :disabled="running" @click="startDetection">开始检测</button>
+      <button class="win-button action-button start-button" type="button" :disabled="running" @click="startDetection">
+        <span v-if="running" class="button-spinner" aria-hidden="true"></span>
+        <span>{{ running ? '检测中' : '开始检测' }}</span>
+      </button>
       <button class="win-button action-button" type="button" :disabled="!canPause" @click="pauseDetection">
         {{ paused ? '继续' : '暂停' }}
       </button>
@@ -360,7 +425,11 @@ async function exportExcel() {
       </div>
     </section>
 
-    <section class="table-frame" aria-label="检测结果">
+    <section class="table-frame" :class="{'table-loading': running}" aria-label="检测结果">
+      <div v-if="running" class="loading-strip" aria-live="polite">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <span>{{ loadingText }}</span>
+      </div>
       <table class="result-table">
         <thead v-if="isICPResult">
           <tr>
@@ -402,6 +471,10 @@ async function exportExcel() {
           </tr>
         </tbody>
       </table>
+      <div v-if="running && !rows.length" class="loading-empty">
+        <span class="loading-spinner large" aria-hidden="true"></span>
+        <span>正在等待接口返回...</span>
+      </div>
     </section>
 
     <footer class="status-panel">

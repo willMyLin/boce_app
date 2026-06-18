@@ -19,7 +19,10 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-const boceBaseURL = "https://api.boce.com/v3/"
+const (
+	boceBaseURL   = "https://api.boce.com/v3/"
+	boceBatchSize = 20
+)
 
 // App struct
 type App struct {
@@ -35,6 +38,20 @@ func NewApp() *App {
 // so we can call the runtime methods.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+}
+
+func (a *App) emitDetectStart(total int) {
+	if a.ctx == nil {
+		return
+	}
+	runtime.EventsEmit(a.ctx, "detect:start", DetectStartEvent{Total: total})
+}
+
+func (a *App) emitDetectRow(row DetectRow) {
+	if a.ctx == nil {
+		return
+	}
+	runtime.EventsEmit(a.ctx, "detect:row", row)
 }
 
 type DetectRequest struct {
@@ -89,6 +106,10 @@ type ImportResponse struct {
 type ExportResponse struct {
 	Path    string `json:"path"`
 	Message string `json:"message"`
+}
+
+type DetectStartEvent struct {
+	Total int `json:"total"`
 }
 
 type bocePolluteResponse struct {
@@ -175,7 +196,7 @@ func (a *App) StartDetection(req DetectRequest) DetectResponse {
 	}
 
 	if req.APIKey == "" || strings.Contains(req.APIKey, "*") {
-		return makeMockDetectionResponse(
+		response := makeMockDetectionResponse(
 			fmt.Sprintf("未填写有效 API Key，返回测试数据，并发 %d，超时 %d 秒", req.Concurrency, req.TimeoutSeconds),
 			req.EnablePollution,
 			req.EnableHijack,
@@ -184,6 +205,11 @@ func (a *App) StartDetection(req DetectRequest) DetectResponse {
 			req.EnableBlacklist,
 			req.EnableWall,
 		)
+		a.emitDetectStart(len(response.Rows))
+		for _, row := range response.Rows {
+			a.emitDetectRow(row)
+		}
+		return response
 	}
 
 	targets := normalizeTargets(req.Targets)
@@ -212,27 +238,27 @@ func (a *App) StartDetection(req DetectRequest) DetectResponse {
 		Timeout: time.Duration(timeout) * time.Second,
 	}
 
+	expectedRows := expectedDetectRows(req, len(targets))
+	a.emitDetectStart(expectedRows)
+	emitRow := a.emitDetectRow
 	rows := make([]DetectRow, 0, len(targets)*6)
 	if req.EnablePollution {
-		rows = append(rows, runPollutionDetection(client, req.APIKey, targets, concurrency)...)
+		rows = append(rows, runPollutionDetection(client, req.APIKey, targets, concurrency, len(rows), emitRow)...)
 	}
 	if req.EnableHijack {
-		rows = append(rows, runQQDetection(client, req.APIKey, targets, concurrency)...)
+		rows = append(rows, runQQDetection(client, req.APIKey, targets, concurrency, len(rows), emitRow)...)
 	}
 	if req.EnableWechat {
-		rows = append(rows, runWechatDetection(client, req.APIKey, targets, concurrency)...)
+		rows = append(rows, runWechatDetection(client, req.APIKey, targets, concurrency, len(rows), emitRow)...)
 	}
 	if req.EnableICP {
-		rows = append(rows, runICPDetection(client, req.APIKey, targets, concurrency)...)
+		rows = append(rows, runICPDetection(client, req.APIKey, targets, concurrency, len(rows), emitRow)...)
 	}
 	if req.EnableBlacklist {
-		rows = append(rows, runBlacklistDetection(client, req.APIKey, targets, concurrency)...)
+		rows = append(rows, runBlacklistDetection(client, req.APIKey, targets, concurrency, len(rows), emitRow)...)
 	}
 	if req.EnableWall {
-		rows = append(rows, runWallDetection(client, req.APIKey, targets, concurrency)...)
-	}
-	for idx := range rows {
-		rows[idx].ID = idx + 1
+		rows = append(rows, runWallDetection(client, req.APIKey, targets, concurrency, len(rows), emitRow)...)
 	}
 
 	summary := summarizeRows(rows)
@@ -333,6 +359,10 @@ func queryQQBatch(client *http.Client, apiKey string, hosts []string) (map[strin
 	return queryBlockBatch(client, apiKey, hosts, "task/create/qq")
 }
 
+func queryPollutionBatch(client *http.Client, apiKey string, hosts []string) (map[string]int, error) {
+	return queryBlockBatch(client, apiKey, hosts, "task/create/pollute")
+}
+
 func queryWechatBatch(client *http.Client, apiKey string, hosts []string) (map[string]int, error) {
 	return queryBlockBatch(client, apiKey, hosts, "task/create/wechat")
 }
@@ -426,58 +456,29 @@ func queryBlockBatch(client *http.Client, apiKey string, hosts []string, taskPat
 func setBoceTaskQuery(query url.Values, apiKey string, host string) {
 	query.Set("key", apiKey)
 	query.Set("host", host)
-	query.Set("from", "app")
 }
 
-func runPollutionDetection(client *http.Client, apiKey string, targets []string, concurrency int) []DetectRow {
-	rows := make([]DetectRow, len(targets))
-	jobs := make(chan int)
-	var wg sync.WaitGroup
-
-	for worker := 0; worker < concurrency; worker++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for idx := range jobs {
-				target := targets[idx]
-				statusCode, err := queryPollution(client, apiKey, target)
-				rows[idx] = DetectRow{
-					Type:        "污染",
-					Target:      target,
-					Status:      polluteStatusText(statusCode, err),
-					CheckedAt:   time.Now().Format("2006-01-02 15:04:05"),
-					ErrorRemark: errorRemark(err),
-				}
-			}
-		}()
-	}
-
-	for idx := range targets {
-		jobs <- idx
-	}
-	close(jobs)
-	wg.Wait()
-
-	return rows
+func runPollutionDetection(client *http.Client, apiKey string, targets []string, concurrency int, idOffset int, emit func(DetectRow)) []DetectRow {
+	return runBlockDetection(client, apiKey, targets, concurrency, idOffset, "污染", queryPollutionBatch, polluteStatusText, emit)
 }
 
-func runQQDetection(client *http.Client, apiKey string, targets []string, concurrency int) []DetectRow {
-	return runBlockDetection(client, apiKey, targets, concurrency, "QQ拦截", queryQQBatch, blockStatusText)
+func runQQDetection(client *http.Client, apiKey string, targets []string, concurrency int, idOffset int, emit func(DetectRow)) []DetectRow {
+	return runBlockDetection(client, apiKey, targets, concurrency, idOffset, "QQ拦截", queryQQBatch, blockStatusText, emit)
 }
 
-func runWechatDetection(client *http.Client, apiKey string, targets []string, concurrency int) []DetectRow {
-	return runBlockDetection(client, apiKey, targets, concurrency, "微信拦截", queryWechatBatch, blockStatusText)
+func runWechatDetection(client *http.Client, apiKey string, targets []string, concurrency int, idOffset int, emit func(DetectRow)) []DetectRow {
+	return runBlockDetection(client, apiKey, targets, concurrency, idOffset, "微信拦截", queryWechatBatch, blockStatusText, emit)
 }
 
-func runBlacklistDetection(client *http.Client, apiKey string, targets []string, concurrency int) []DetectRow {
-	return runBlockDetection(client, apiKey, targets, concurrency, "备案黑名单", queryBlacklistBatch, blacklistStatusText)
+func runBlacklistDetection(client *http.Client, apiKey string, targets []string, concurrency int, idOffset int, emit func(DetectRow)) []DetectRow {
+	return runBlockDetection(client, apiKey, targets, concurrency, idOffset, "备案黑名单", queryBlacklistBatch, blacklistStatusText, emit)
 }
 
-func runWallDetection(client *http.Client, apiKey string, targets []string, concurrency int) []DetectRow {
-	return runBlockDetection(client, apiKey, targets, concurrency, "被墙检测", queryWallBatch, wallStatusText)
+func runWallDetection(client *http.Client, apiKey string, targets []string, concurrency int, idOffset int, emit func(DetectRow)) []DetectRow {
+	return runBlockDetection(client, apiKey, targets, concurrency, idOffset, "被墙检测", queryWallBatch, wallStatusText, emit)
 }
 
-func runICPDetection(client *http.Client, apiKey string, targets []string, concurrency int) []DetectRow {
+func runICPDetection(client *http.Client, apiKey string, targets []string, concurrency int, idOffset int, emit func(DetectRow)) []DetectRow {
 	rows := make([]DetectRow, len(targets))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
@@ -490,7 +491,8 @@ func runICPDetection(client *http.Client, apiKey string, targets []string, concu
 				target := targets[idx]
 				info, err := queryICP(client, apiKey, target)
 				domain := firstNonEmpty(info.Domain, target)
-				rows[idx] = DetectRow{
+				row := DetectRow{
+					ID:          idOffset + idx + 1,
 					Type:        "备案查询",
 					Target:      target,
 					Status:      icpStatusText(info.Status, err),
@@ -499,6 +501,10 @@ func runICPDetection(client *http.Client, apiKey string, targets []string, concu
 					Domain:      domain,
 					BeianCode:   firstNonEmpty(info.SiteBeianCode, info.CompanyBeianCode),
 					SiteName:    info.Name,
+				}
+				rows[idx] = row
+				if emit != nil {
+					emit(row)
 				}
 			}
 		}()
@@ -513,13 +519,11 @@ func runICPDetection(client *http.Client, apiKey string, targets []string, concu
 	return rows
 }
 
-func runBlockDetection(client *http.Client, apiKey string, targets []string, concurrency int, rowType string, query func(*http.Client, string, []string) (map[string]int, error), statusText func(int, error) string) []DetectRow {
-	const batchSize = 50
-
+func runBlockDetection(client *http.Client, apiKey string, targets []string, concurrency int, idOffset int, rowType string, query func(*http.Client, string, []string) (map[string]int, error), statusText func(int, error) string, emit func(DetectRow)) []DetectRow {
 	rows := make([]DetectRow, len(targets))
-	batches := make([][]int, 0, (len(targets)+batchSize-1)/batchSize)
-	for start := 0; start < len(targets); start += batchSize {
-		end := start + batchSize
+	batches := make([][]int, 0, (len(targets)+boceBatchSize-1)/boceBatchSize)
+	for start := 0; start < len(targets); start += boceBatchSize {
+		end := start + boceBatchSize
 		if end > len(targets) {
 			end = len(targets)
 		}
@@ -557,12 +561,17 @@ func runBlockDetection(client *http.Client, apiKey string, targets []string, con
 					} else if statusCode == 3 {
 						statusErr = errors.New("检测失败")
 					}
-					rows[idx] = DetectRow{
+					row := DetectRow{
+						ID:          idOffset + idx + 1,
 						Type:        rowType,
 						Target:      target,
 						Status:      statusText(statusCode, statusErr),
 						CheckedAt:   checkedAt,
 						ErrorRemark: errorRemark(statusErr),
+					}
+					rows[idx] = row
+					if emit != nil {
+						emit(row)
 					}
 				}
 			}
@@ -716,7 +725,34 @@ func errorRemark(err error) string {
 	if err == nil {
 		return ""
 	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return fmt.Sprintf("请求失败: %v", urlErr.Err)
+	}
 	return err.Error()
+}
+
+func expectedDetectRows(req DetectRequest, targetCount int) int {
+	checks := 0
+	if req.EnablePollution {
+		checks++
+	}
+	if req.EnableHijack {
+		checks++
+	}
+	if req.EnableWechat {
+		checks++
+	}
+	if req.EnableICP {
+		checks++
+	}
+	if req.EnableBlacklist {
+		checks++
+	}
+	if req.EnableWall {
+		checks++
+	}
+	return checks * targetCount
 }
 
 func summarizeRows(rows []DetectRow) DetectSummary {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"errors"
 	"io"
 	"net/url"
 	"path/filepath"
@@ -30,12 +31,25 @@ func TestParseTargetsTextDeduplicates(t *testing.T) {
 	}
 }
 
-func TestSetBoceTaskQueryIncludesSource(t *testing.T) {
+func TestSetBoceTaskQuery(t *testing.T) {
 	query := url.Values{}
 	setBoceTaskQuery(query, "test-key", "baidu.com,boce.com")
 
-	if query.Get("key") != "test-key" || query.Get("host") != "baidu.com,boce.com" || query.Get("from") != "app" {
+	if query.Get("key") != "test-key" || query.Get("host") != "baidu.com,boce.com" || query.Get("from") != "" {
 		t.Fatalf("setBoceTaskQuery() = %s", query.Encode())
+	}
+}
+
+func TestErrorRemarkHidesRequestURL(t *testing.T) {
+	err := &url.Error{
+		Op:  "Get",
+		URL: "https://api.boce.com/v3/task/create/qq?host=www.qq.com&key=secret",
+		Err: errors.New("EOF"),
+	}
+
+	got := errorRemark(err)
+	if got != "请求失败: EOF" {
+		t.Fatalf("errorRemark() = %q", got)
 	}
 }
 
